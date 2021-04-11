@@ -4,6 +4,30 @@ from nltk.sentiment import SentimentIntensityAnalyzer
 from random import shuffle
 from statistics import mean
 
+from sklearn.naive_bayes import (
+    BernoulliNB,
+    ComplementNB,
+    MultinomialNB,
+)
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+
+classifiers = {
+    "BernoulliNB": BernoulliNB(),
+    "ComplementNB": ComplementNB(),
+    "MultinomialNB": MultinomialNB(),
+    "KNeighborsClassifier": KNeighborsClassifier(),
+    "DecisionTreeClassifier": DecisionTreeClassifier(),
+    "RandomForestClassifier": RandomForestClassifier(),
+    "LogisticRegression": LogisticRegression(),
+    "MLPClassifier": MLPClassifier(max_iter=1000),
+    "AdaBoostClassifier": AdaBoostClassifier(),
+}
+
 
 def is_positive(tweet: str) -> bool:
     """True if tweet has positive compound sentiment, False otherwise"""
@@ -60,13 +84,7 @@ def isPositiveMovieReview(review_id: str) -> bool:
     return mean(scores) > 0
 
 
-def movieReviews():
-    positive_review_ids = nltk.corpus.movie_reviews.fileids(categories=["pos"])
-    negative_review_ids = nltk.corpus.movie_reviews.fileids(categories=["neg"])
-    all_review_ids = positive_review_ids + negative_review_ids
-
-    unwanted = nltk.corpus.stopwords.words('english')
-    unwanted.extend([w.lower for w in nltk.corpus.names.words()])
+def movieReviewsComplexFeature():
 
     def skip_unwanted(pos_tuple):
         word, tag = pos_tuple
@@ -76,6 +94,8 @@ def movieReviews():
             return False
         return True
 
+    unwanted = nltk.corpus.stopwords.words('english')
+    unwanted.extend([w.lower for w in nltk.corpus.names.words()])
     positive_words = [word for word, tag in filter(
         skip_unwanted,
         nltk.pos_tag(nltk.corpus.movie_reviews.words(categories=["pos"]))
@@ -85,6 +105,16 @@ def movieReviews():
         nltk.pos_tag(nltk.corpus.movie_reviews.words(categories=["neg"]))
     )]
 
+    # Option to add Bigram Collocation feature to the existing dataset
+    positive_bigram_finder = nltk.collocations.BigramCollocationFinder.from_words([
+        w for w in nltk.corpus.movie_reviews.words(categories=["pos"])
+        if w.isalpha() and w not in unwanted
+    ])
+    negative_bigram_finder = nltk.collocations.BigramCollocationFinder.from_words([
+        w for w in nltk.corpus.movie_reviews.words(categories=["neg"])
+        if w.isalpha() and w not in unwanted
+    ])
+
     # Delete common words occurring in intersection
     positive_fd = nltk.FreqDist(positive_words)
     negative_fd = nltk.FreqDist(negative_words)
@@ -93,22 +123,66 @@ def movieReviews():
         del positive_fd[word]
         del negative_fd[word]
 
-    # Option to add Bigram Collocation feature to the existing dataset
-    # positive_bigram_finder = nltk.collocations.BigramCollocationFinder.from_words([
-    #     w for w in nltk.corpus.movie_reviews.words(categories=["pos"])
-    #     if w.isalpha() and w not in unwanted
-    # ])
-    # negative_bigram_finder = nltk.collocations.BigramCollocationFinder.from_words([
-    #     w for w in nltk.corpus.movie_reviews.words(categories=["neg"])
-    #     if w.isalpha() and w not in unwanted
-    # ])
-
     # Get top 100 positive and top 100 negative words in reviews
     top_100_positive = {word for word, count in positive_fd.most_common(100)}
     top_100_negative = {word for word, count in negative_fd.most_common(100)}
 
-    print(top_100_positive)
-    print(top_100_negative)
+    def extract_features(text):
+        curr_features = dict()
+        wordcount_pos = 0
+        wordcount_neg = 0
+        bigram_count_pos = 0
+        bigram_count_neg = 0
+        compound_scores = list()
+        positive_scores = list()
+        sia = SentimentIntensityAnalyzer()
+        for sentence in nltk.sent_tokenize(text):
+            for word in nltk.word_tokenize(sentence):
+                if word.lower() in top_100_positive:
+                    wordcount_pos += 1
+                if word.lower() in top_100_negative:
+                    wordcount_neg += 1
+                # if word in positive_bigram_finder:
+                #     bigram_count_pos += 1
+                # if word in negative_bigram_finder:
+                #     bigram_count_neg += 1
+            compound_scores.append(sia.polarity_scores(sentence)["compound"])
+            positive_scores.append(sia.polarity_scores(sentence)["pos"])
+
+        # Adding 1 to the final compound score to always have positive numbers
+        # since some classifiers you'll use later don't work with negative numbers.
+        curr_features["mean_compound"] = mean(compound_scores) + 1
+        curr_features["mean_positive"] = mean(positive_scores)
+        curr_features["wordcount_count_positive"] = wordcount_pos
+        curr_features["wordcount_count_negative"] = wordcount_neg
+        # curr_features["bigram_count_pos"] = bigram_count_pos
+        # curr_features["bigram_count_neg"] = bigram_count_neg
+        return curr_features
+
+    features = [
+        (extract_features(nltk.corpus.movie_reviews.raw(review)), "pos")
+        for review in nltk.corpus.movie_reviews.fileids(categories=["pos"])
+    ]
+    features.extend([
+        (extract_features(nltk.corpus.movie_reviews.raw(review)), "neg")
+        for review in nltk.corpus.movie_reviews.fileids(categories=["neg"])
+    ])
+
+    train_count = len(features) // 4
+    shuffle(features)
+    classifier = nltk.NaiveBayesClassifier.train(features[:train_count])
+    print(classifier.show_most_informative_features(10))
+    for name, sklearn_classifier in classifiers.items():
+        classifier = nltk.classify.SklearnClassifier(sklearn_classifier)
+        classifier.train(features[:train_count])
+        accuracy = nltk.classify.accuracy(classifier, features[train_count:])
+        print(F"{accuracy:.2%} - {name}")
+
+
+def movieReviewSimple():
+    positive_review_ids = nltk.corpus.movie_reviews.fileids(categories=["pos"])
+    negative_review_ids = nltk.corpus.movie_reviews.fileids(categories=["neg"])
+    all_review_ids = positive_review_ids + negative_review_ids
 
     shuffle(all_review_ids)
     correct = 0
@@ -123,4 +197,4 @@ def movieReviews():
 
 
 if __name__ == '__main__':
-    movieReviews()
+    movieReviewsComplexFeature()
