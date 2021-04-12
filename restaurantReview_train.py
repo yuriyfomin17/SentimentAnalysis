@@ -31,6 +31,8 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.svm import SVC
 
+import pickle
+
 
 def dividing_reviews(parameter, dataset):
     reviews = []
@@ -70,11 +72,11 @@ def lemmatizeWords_plotFreq_distribution(final_words):
     for word in final_words:
         word = wn.lemmatize(word)
         lem_words.append(word)
-    # The frequency distribution of the words
+    # # The frequency distribution of the words
     freq_dist = nltk.FreqDist(lem_words)
-    # Frequency Distribution Plot
-    plt.subplots(figsize=(20, 12))
-    freq_dist.plot(30)
+    # # Frequency Distribution Plot
+    # plt.subplots(figsize=(20, 12))
+    # freq_dist.plot(30)
     return freq_dist
 
 
@@ -90,6 +92,33 @@ def wordCloud(lem_words):
     plt.imshow(wordcloud)
     plt.title('Reviews World Cloud(100 words)')
     plt.axis('off')
+    plt.show()
+
+
+def histogramPlot(words):
+    labels_word = []
+    word_count = []
+    for i in range(len(words)):
+        labels_word.append(words[i][0])
+        word_count.append(words[i][1])
+
+    x = np.arange(len(labels_word))  # the label locations
+    width = 0.7  # the width of the bars
+
+    fig, ax = plt.subplots()
+    rects1 = ax.bar(x, word_count, width, color='green')
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_ylabel('Count')
+    ax.set_title('Top 10 words by count in positive customer feedback')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels_word, fontsize=7)
+    ax.legend()
+
+    ax.bar_label(rects1, padding=3)
+
+    fig.tight_layout()
+    plt.figure(figsize=(25, 10))
     plt.show()
 
 
@@ -121,6 +150,7 @@ def restaurantReviews():
         del positive_fd[word]
         del negative_fd[word]
 
+    histogramPlot(positive_fd.most_common(10))
     # Get top 100 positive and top 100 negative words in reviews
     top_100_positive = {word for word, count in positive_fd.most_common(100)}
     top_100_negative = {word for word, count in negative_fd.most_common(100)}
@@ -159,7 +189,8 @@ def restaurantReviews():
 
         # Adding 1 to the final compound score to always have positive numbers
         # since some classifiers you'll use later don't work with negative numbers.
-        curr_features = [mean(compound_scores) + 1, mean(positive_scores), wordcount_pos, wordcount_neg, bigram_count_pos, bigram_count_neg]
+        curr_features = [mean(compound_scores) + 1, mean(positive_scores), wordcount_pos, wordcount_neg,
+                         bigram_count_pos, bigram_count_neg]
         return curr_features
 
     corpus = []
@@ -243,8 +274,25 @@ def restaurantReviews():
     #     print(F"{accuracy_score(y_test, y_pred):.2%} - {i}")
     # <--------------------------------------------------------- Test of Different Models --------------------------->
     model = RandomForestClassifier()
+    with open('corpus.data', 'wb') as filehandle:
+        # store the data as binary data stream
+        pickle.dump(corpus, filehandle)
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
+
+    # <--------------------------------------------------- Pickle Model Saving -------------------------------------->
+    # trained_classifier = 'trained_restaurant_reviews_classifier.sav'
+    # pickle.dump(model, open(trained_classifier, 'wb'))
+    #
+    # with open('x_test.data', 'wb') as filehandle:
+    #     # store the data as binary data stream
+    #     pickle.dump(X_test, filehandle)
+    #
+    # with open('y_test.data', 'wb') as filehandle:
+    #     # store the data as binary data stream
+    #     pickle.dump(y_test, filehandle)
+    # <--------------------------------------------------- Pickle Model Saving -------------------------------------->
+
     print(F"{accuracy_score(y_test, y_pred):.2%} - Random Forest Model")
 
 
