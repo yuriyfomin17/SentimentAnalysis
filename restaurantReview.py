@@ -12,6 +12,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import classification_report
 from nltk.sentiment import SentimentIntensityAnalyzer
+from statistics import mean
+import numpy as np
 from sklearn.naive_bayes import (
     BernoulliNB,
     ComplementNB,
@@ -24,7 +26,7 @@ from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
-
+from sklearn.svm import SVC
 
 def dividing_reviews(parameter, dataset):
     reviews = []
@@ -120,7 +122,6 @@ def restaurantReviews():
     top_100_negative = {word for word, count in negative_fd.most_common(100)}
 # {'mean_compound': 1.0119444444444445, 'mean_positive': 0.11548148148148148, 'wordcount_count_positive': 3, 'wordcount_count_negative': 1}
     def extract_features(text):
-        curr_features = dict()
         wordcount_pos = 0
         wordcount_neg = 0
         bigram_count_pos = 0
@@ -143,33 +144,32 @@ def restaurantReviews():
 
         # Adding 1 to the final compound score to always have positive numbers
         # since some classifiers you'll use later don't work with negative numbers.
-        curr_features["mean_compound"] = mean(compound_scores) + 1
-        curr_features["mean_positive"] = mean(positive_scores)
-        curr_features["wordcount_count_positive"] = wordcount_pos
-        curr_features["wordcount_count_negative"] = wordcount_neg
-        # curr_features["bigram_count_pos"] = bigram_count_pos
-        # curr_features["bigram_count_neg"] = bigram_count_neg
+        curr_features = [mean(compound_scores) + 1, mean(positive_scores), wordcount_pos, wordcount_neg ]
         return curr_features
     corpus = []
     stopwords = nltk.corpus.stopwords.words('english')
     lemmatizer = WordNetLemmatizer()
-    word_count = 0
+    y = []
     for i in range(0, 1000): #as the data as 1000 data points
         review = re.sub('[^a-zA-Z]', ' ', dataset['Review'][i])
         review = review.lower()
         review = review.split()
-        review = [lemmatizer.lemmatize(word) for word in review if not word in set(stopwords)]
-        word_count += len(review)
+        review = [lemmatizer.lemmatize(word) for word in review if not word in set(stopwords) and word.isalpha()]
         review = ' '.join(review)
-        corpus.append(review)
+        if len(review) > 0:
+            corpus.append(review)
+            y.append(dataset.values[i][1])
     # Creating the Bag of Words model
     cv = CountVectorizer(max_features = 2000)
     #the X and y
     X = cv.fit_transform(corpus).toarray()
+    new_features = []
     for row in range(len(X)):
-        new_added_features = extract_features(corpus[row])
+        curr_added_features = extract_features(corpus[row])
+        new_features.append(curr_added_features)
+    X = np.append(X, new_features, axis = 1)
 
-    y = dataset.iloc[:, 1].values
+    # y = dataset.iloc[:, 1].values
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=7)
 
@@ -181,8 +181,10 @@ def restaurantReviews():
                    DecisionTreeClassifier(),
                    RandomForestClassifier(),
                    LogisticRegression(),
-                   MLPClassifier(max_iter=1000),
-                   AdaBoostClassifier()]
+                   MLPClassifier(max_iter=3000),
+                   AdaBoostClassifier(),
+                   SVC()
+                   ]
     print(type(classifiers))
     for i in  range(len(classifiers)):
         classifier = classifiers[i]
