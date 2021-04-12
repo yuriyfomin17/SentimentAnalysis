@@ -8,6 +8,22 @@ from sklearn.feature_extraction.text import CountVectorizer
 from random import shuffle
 import re
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import classification_report
+from nltk.sentiment import SentimentIntensityAnalyzer
+from sklearn.naive_bayes import (
+    BernoulliNB,
+    ComplementNB,
+    MultinomialNB,
+)
+
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 
 
 def dividing_reviews(parameter, dataset):
@@ -56,6 +72,8 @@ def lemmatizeWords_plotFreq_distribution(final_words):
     return freq_dist
 
 
+
+
 def wordCloud(lem_words):
     res = ' '.join([i for i in lem_words if not i.isdigit()])
     plt.subplots(figsize=(16, 10))
@@ -89,24 +107,88 @@ def restaurantReviews():
     lem_words_pos = lemmatizeWords_plotFreq_distribution(final_words_pos)
     lem_words_neg = lemmatizeWords_plotFreq_distribution(final_words_neg)
 
-    # Creating the Bag of Words model
-    cv = CountVectorizer(max_features=2000)
+    # Delete common words occurring in intersection
+    positive_fd = nltk.FreqDist(lem_words_pos)
+    negative_fd = nltk.FreqDist(lem_words_neg)
+    common_set = set(lem_words_pos).intersection(lem_words_neg)
+    for word in common_set:
+        del positive_fd[word]
+        del negative_fd[word]
+
+    # Get top 100 positive and top 100 negative words in reviews
+    top_100_positive = {word for word, count in positive_fd.most_common(100)}
+    top_100_negative = {word for word, count in negative_fd.most_common(100)}
+# {'mean_compound': 1.0119444444444445, 'mean_positive': 0.11548148148148148, 'wordcount_count_positive': 3, 'wordcount_count_negative': 1}
+    def extract_features(text):
+        curr_features = dict()
+        wordcount_pos = 0
+        wordcount_neg = 0
+        bigram_count_pos = 0
+        bigram_count_neg = 0
+        compound_scores = list()
+        positive_scores = list()
+        sia = SentimentIntensityAnalyzer()
+        for sentence in nltk.sent_tokenize(text):
+            for word in nltk.word_tokenize(sentence):
+                if word.lower() in top_100_positive:
+                    wordcount_pos += 1
+                if word.lower() in top_100_negative:
+                    wordcount_neg += 1
+                # if word in positive_bigram_finder:
+                #     bigram_count_pos += 1
+                # if word in negative_bigram_finder:
+                #     bigram_count_neg += 1
+            compound_scores.append(sia.polarity_scores(sentence)["compound"])
+            positive_scores.append(sia.polarity_scores(sentence)["pos"])
+
+        # Adding 1 to the final compound score to always have positive numbers
+        # since some classifiers you'll use later don't work with negative numbers.
+        curr_features["mean_compound"] = mean(compound_scores) + 1
+        curr_features["mean_positive"] = mean(positive_scores)
+        curr_features["wordcount_count_positive"] = wordcount_pos
+        curr_features["wordcount_count_negative"] = wordcount_neg
+        # curr_features["bigram_count_pos"] = bigram_count_pos
+        # curr_features["bigram_count_neg"] = bigram_count_neg
+        return curr_features
     corpus = []
     stopwords = nltk.corpus.stopwords.words('english')
     lemmatizer = WordNetLemmatizer()
+    word_count = 0
     for i in range(0, 1000): #as the data as 1000 data points
         review = re.sub('[^a-zA-Z]', ' ', dataset['Review'][i])
         review = review.lower()
         review = review.split()
         review = [lemmatizer.lemmatize(word) for word in review if not word in set(stopwords)]
+        word_count += len(review)
         review = ' '.join(review)
         corpus.append(review)
-
+    # Creating the Bag of Words model
     cv = CountVectorizer(max_features = 2000)
     #the X and y
     X = cv.fit_transform(corpus).toarray()
+    for row in range(len(X)):
+        new_added_features = extract_features(corpus[row])
+
     y = dataset.iloc[:, 1].values
-    print("Hello")
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=7)
+
+
+
+    classifiers = [BernoulliNB(),ComplementNB(),
+                   MultinomialNB(),
+                   KNeighborsClassifier(),
+                   DecisionTreeClassifier(),
+                   RandomForestClassifier(),
+                   LogisticRegression(),
+                   MLPClassifier(max_iter=1000),
+                   AdaBoostClassifier()]
+    print(type(classifiers))
+    for i in  range(len(classifiers)):
+        classifier = classifiers[i]
+        classifier.fit(X_train, y_train)
+        y_pred = classifier.predict(X_test)
+        print(F"{accuracy_score(y_test, y_pred):.2%} - {i}")
 
 
 if '__main__' == __name__:
